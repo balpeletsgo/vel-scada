@@ -1,0 +1,258 @@
+# Development Docker Compose
+# Usage: docker compose -f docker/compose/dev.yml up -d
+
+services:
+  # ===================
+  # NGINX - Reverse Proxy
+  # ===================
+  nginx:
+    image: nginx:alpine
+    container_name: vel-scada-nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ../../backend:/var/www/html:cached
+      - ../nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - laravel
+    networks:
+      - vel-scada-network
+
+  # ===================
+  # LARAVEL - PHP-FPM (Dev)
+  # ===================
+  laravel:
+    build:
+      context: ../../backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vel-scada-laravel
+    volumes:
+      - ../../backend:/var/www/html:cached
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: vel_scada
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SESSION_DRIVER: redis
+      CACHE_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      ML_SERVICE_URL: http://ml-service:8001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - vel-scada-network
+
+  # ===================
+  # REVERB - WebSocket Server
+  # ===================
+  reverb:
+    build:
+      context: ../../backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vel-scada-reverb
+    ports:
+      - "6001:8080"
+    volumes:
+      - ../../backend:/var/www/html:cached
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: vel_scada
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REVERB_HOST: 0.0.0.0
+      REVERB_PORT: 8080
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080 --debug
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - vel-scada-network
+
+  # ===================
+  # SIMULATOR - Energy Data Simulator
+  # ===================
+  simulator:
+    build:
+      context: ../../backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vel-scada-simulator
+    volumes:
+      - ../../backend:/var/www/html:cached
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: vel_scada
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REVERB_HOST: reverb
+      REVERB_PORT: 8080
+    command: php artisan simulate:energy
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      reverb:
+        condition: service_started
+    networks:
+      - vel-scada-network
+    restart: unless-stopped
+
+  # ===================
+  # QUEUE WORKER - Process Background Jobs
+  # ===================
+  queue:
+    build:
+      context: ../../backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vel-scada-queue
+    volumes:
+      - ../../backend:/var/www/html:cached
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: vel_scada
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ML_SERVICE_URL: http://ml-service:8001
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      ml-service:
+        condition: service_started
+    networks:
+      - vel-scada-network
+    restart: unless-stopped
+
+  # ===================
+  # VITE - Frontend Dev Server (Hot Reload)
+  # ===================
+  vite:
+    image: node:22-alpine
+    container_name: vel-scada-vite
+    working_dir: /var/www/html
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../../backend:/var/www/html:cached
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    tty: true
+    networks:
+      - vel-scada-network
+
+  # ===================
+  # MYSQL - Database
+  # ===================
+  mysql:
+    image: mysql:8.0
+    container_name: vel-scada-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: vel_scada
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-ppassword",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - vel-scada-network
+
+  # ===================
+  # REDIS - Cache & Queue
+  # ===================
+  redis:
+    image: redis:7-alpine
+    container_name: vel-scada-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - vel-scada-network
+
+  # ===================
+  # PHPMYADMIN - Database GUI
+  # ===================
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: vel-scada-phpmyadmin
+    ports:
+      - "8888:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: password
+    depends_on:
+      - mysql
+    networks:
+      - vel-scada-network
+
+  # ===================
+  # ML SERVICE - Energy Pricing API
+  # ===================
+  ml-service:
+    build:
+      context: ../../ml-service
+      dockerfile: Dockerfile
+    container_name: vel-scada-ml
+    ports:
+      - "8001:8001"
+    volumes:
+      - ../../ml-service:/app:cached
+    environment:
+      PYTHONUNBUFFERED: 1
+    networks:
+      - vel-scada-network
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  vel-scada-network:
+    driver: bridge
