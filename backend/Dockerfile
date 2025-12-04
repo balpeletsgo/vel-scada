@@ -1,9 +1,5 @@
 FROM php:8.4-fpm
 
-# Arguments
-ARG user=www-data
-ARG uid=1000
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
@@ -15,7 +11,12 @@ RUN apt-get update && apt-get install -y \
     zip \
     unzip \
     supervisor \
-    cron
+    cron \
+    gnupg
+
+# Install Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -32,14 +33,23 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy composer files first for caching
+# Copy package files first for npm caching
+COPY package*.json ./
+
+# Install npm dependencies
+RUN npm install
+
+# Copy composer files
 COPY composer.json composer.lock ./
 
 # Install PHP dependencies
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 
-# Copy the rest of the application (including pre-built assets)
+# Copy the rest of the application
 COPY . .
+
+# Build frontend
+RUN npm run build
 
 # Run composer scripts
 RUN composer run-script post-autoload-dump || true

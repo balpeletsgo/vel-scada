@@ -6,131 +6,64 @@ Platform simulasi perdagangan energi peer-to-peer dengan sistem SCADA untuk moni
 
 ## 📋 Persyaratan
 
-### Wajib:
-- **Docker Desktop** - [Download disini](https://docs.docker.com/desktop/)
+Cukup install **Docker Desktop** saja:
 
-### Windows Saja (tambahan):
-- **Node.js v20+** - [Download disini](https://nodejs.org/) (untuk build frontend pertama kali)
-
-| OS          | Download Docker                                          |
+| OS          | Download                                                 |
 | ----------- | -------------------------------------------------------- |
 | **Windows** | https://docs.docker.com/desktop/install/windows-install/ |
 | **Linux**   | https://docs.docker.com/desktop/install/linux/           |
 | **Mac**     | https://docs.docker.com/desktop/install/mac-install/     |
 
-> ⚠️ **Windows**: 
-> - Pastikan WSL2 sudah aktif
-> - Install Node.js untuk build frontend
+> ⚠️ **Windows**: Pastikan WSL2 sudah aktif saat install Docker Desktop.
 
 ---
 
-## 🚀 Cara Menjalankan (1 Command!)
+## 🚀 Cara Menjalankan
 
-### **Linux / Mac**
-
-Buka Terminal, masuk ke folder project, lalu jalankan:
+### 1. Start (pertama kali butuh waktu ~5 menit)
 
 ```bash
-./start.sh
+docker compose -f docker/compose/prod.yml up -d --build
 ```
 
-### **Windows**
+### 2. Setup Database (sekali saja)
 
-1. Install Node.js dari https://nodejs.org/ (jika belum)
-2. Buka PowerShell **sebagai Administrator**
-3. Masuk ke folder project:
-
-```powershell
-cd C:\path\to\vel-scada
-.\start.ps1
+```bash
+# Tunggu 30 detik setelah start, lalu jalankan:
+docker compose -f docker/compose/prod.yml exec laravel php artisan migrate --seed
 ```
+
+### 3. Buka Aplikasi
+
+🌐 **http://localhost:8000**
 
 ---
 
-## 🌐 Akses Aplikasi
-
-Setelah berhasil jalan, buka browser dan akses:
-
-| Halaman               | URL                   |
-| --------------------- | --------------------- |
-| 🏠 **Aplikasi Utama** | http://localhost:8000 |
-| 📊 **Database Admin** | http://localhost:8888 |
-
-### Akun Demo
+## 👤 Akun Demo
 
 | Email                 | Password   |
 | --------------------- | ---------- |
 | `jhonest@example.com` | `password` |
-| `ditod@example.com`   | `password` |
+| `dhafa@example.com`   | `password` |
 | `fadhli@example.com`  | `password` |
 
 ---
 
 ## 🛑 Cara Menghentikan
 
-### **Linux / Mac**
-
 ```bash
-./stop.sh
-```
-
-### **Windows**
-
-```powershell
-.\stop.ps1
+docker compose -f docker/compose/prod.yml down
 ```
 
 ---
 
 ## 🔄 Reset Data (Fresh Start)
 
-Jika ingin menghapus semua data dan mulai dari awal:
-
-### **Linux / Mac**
-
 ```bash
-./reset.sh
-```
-
-### **Windows**
-
-```powershell
-.\reset.ps1
-```
-
----
-
-## ❓ Troubleshooting
-
-### Docker tidak jalan?
-
-1. Pastikan Docker Desktop sudah **running** (lihat icon di system tray)
-2. Restart Docker Desktop
-3. Restart komputer jika perlu
-
-### Port sudah dipakai?
-
-Jika muncul error "port already in use":
-
-- Tutup aplikasi lain yang menggunakan port 8000, 8080, 3306, atau 6379
-- Atau restart komputer
-
-### Windows: Script tidak bisa jalan?
-
-Jalankan perintah ini di PowerShell (Administrator) terlebih dahulu:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### Mau lihat log/error?
-
-```bash
-# Linux/Mac
-docker compose -f docker/compose/prod.yml logs -f
-
-# Windows (PowerShell)
-docker compose -f docker/compose/prod.yml logs -f
+docker compose -f docker/compose/prod.yml down -v
+docker compose -f docker/compose/prod.yml up -d --build
+# Tunggu 30 detik, lalu:
+docker compose -f docker/compose/prod.yml exec laravel php artisan migrate:fresh --seed
 ```
 
 ---
@@ -145,12 +78,21 @@ docker compose -f docker/compose/prod.yml logs -f
 
 ---
 
-## 🔧 Untuk Developer
+## ❓ Troubleshooting
 
-Lihat dokumentasi teknis di [DEVELOPER.md](./DEVELOPER.md)
+**Docker tidak jalan?**
+- Pastikan Docker Desktop sudah running (lihat icon di system tray)
+
+**Port sudah dipakai?**
+- Tutup aplikasi yang pakai port 8000, 8080, 3306, atau 6379
+
+**Mau lihat log?**
+```bash
+docker compose -f docker/compose/prod.yml logs -f
+```
 
 ---
 
-## 📄 Lisensi
+## 🔧 Untuk Developer
 
-MIT License - Bebas digunakan untuk keperluan edukasi.
+Lihat [DEVELOPER.md](./DEVELOPER.md)
