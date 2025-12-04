@@ -29,6 +29,45 @@ Write-Host ""
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptPath
 
+# Check if Node.js is installed for building frontend
+Write-Host "🔍 Mengecek Node.js..." -ForegroundColor Yellow
+$nodeInstalled = $false
+try {
+    node --version | Out-Null
+    $nodeInstalled = $true
+    Write-Host "✅ Node.js terinstall" -ForegroundColor Green
+} catch {
+    Write-Host "⚠️  Node.js tidak terinstall" -ForegroundColor Yellow
+}
+
+# Check if we need to build frontend
+$buildExists = Test-Path "backend/public/build/manifest.json"
+
+if (-not $buildExists) {
+    if ($nodeInstalled) {
+        Write-Host ""
+        Write-Host "🔨 Building frontend assets..." -ForegroundColor Yellow
+        Set-Location backend
+        npm install
+        npm run build
+        Set-Location ..
+        Write-Host "✅ Frontend berhasil di-build" -ForegroundColor Green
+    } else {
+        Write-Host ""
+        Write-Host "❌ ERROR: Frontend belum di-build dan Node.js tidak tersedia!" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Solusi:" -ForegroundColor Yellow
+        Write-Host "1. Install Node.js dari https://nodejs.org/" -ForegroundColor White
+        Write-Host "2. Restart PowerShell" -ForegroundColor White
+        Write-Host "3. Jalankan script ini lagi" -ForegroundColor White
+        Write-Host ""
+        exit 1
+    }
+} else {
+    Write-Host "✅ Frontend assets sudah ada" -ForegroundColor Green
+}
+
+Write-Host ""
 Write-Host "📦 Memulai semua services..." -ForegroundColor Yellow
 Write-Host "   (Ini mungkin butuh beberapa menit untuk pertama kali)"
 Write-Host ""
@@ -58,8 +97,6 @@ if ($retryCount -ge $maxRetries) {
 }
 
 Write-Host "✅ MySQL siap" -ForegroundColor Green
-
-# Wait a bit more for Laravel
 Start-Sleep -Seconds 5
 
 # Run migrations

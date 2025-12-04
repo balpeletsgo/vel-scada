@@ -15,9 +15,7 @@ RUN apt-get update && apt-get install -y \
     zip \
     unzip \
     supervisor \
-    cron \
-    nodejs \
-    npm
+    cron
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -34,14 +32,17 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy existing application
-COPY . .
+# Copy composer files first for caching
+COPY composer.json composer.lock ./
 
 # Install PHP dependencies
-RUN composer install --no-interaction --prefer-dist --optimize-autoloader
+RUN composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts
 
-# Install Node dependencies and build
-RUN npm install && npm run build
+# Copy the rest of the application (including pre-built assets)
+COPY . .
+
+# Run composer scripts
+RUN composer run-script post-autoload-dump || true
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
