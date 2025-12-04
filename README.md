@@ -6,15 +6,21 @@ Platform simulasi perdagangan energi peer-to-peer dengan sistem SCADA untuk moni
 
 ## 📋 Persyaratan
 
-Pastikan sudah menginstall **Docker Desktop**:
+### Wajib:
+- **Docker Desktop** - [Download disini](https://docs.docker.com/desktop/)
 
-| OS          | Download                                                 |
+### Windows Saja (tambahan):
+- **Node.js v20+** - [Download disini](https://nodejs.org/) (untuk build frontend pertama kali)
+
+| OS          | Download Docker                                          |
 | ----------- | -------------------------------------------------------- |
 | **Windows** | https://docs.docker.com/desktop/install/windows-install/ |
 | **Linux**   | https://docs.docker.com/desktop/install/linux/           |
 | **Mac**     | https://docs.docker.com/desktop/install/mac-install/     |
 
-> ⚠️ **Windows**: Pastikan WSL2 sudah aktif. Ikuti panduan di link di atas.
+> ⚠️ **Windows**: 
+> - Pastikan WSL2 sudah aktif
+> - Install Node.js untuk build frontend
 
 ---
 
@@ -30,9 +36,12 @@ Buka Terminal, masuk ke folder project, lalu jalankan:
 
 ### **Windows**
 
-Buka PowerShell **sebagai Administrator**, masuk ke folder project, lalu jalankan:
+1. Install Node.js dari https://nodejs.org/ (jika belum)
+2. Buka PowerShell **sebagai Administrator**
+3. Masuk ke folder project:
 
 ```powershell
+cd C:\path\to\vel-scada
 .\start.ps1
 ```
 
