@@ -40,18 +40,32 @@ docker compose -f docker/compose/prod.yml up -d --build
 # Wait for MySQL to be ready
 echo ""
 echo "⏳ Menunggu database siap..."
-sleep 10
 
-# Check if database needs migration
-echo "🔄 Menyiapkan database..."
-docker compose -f docker/compose/prod.yml exec -T laravel php artisan migrate --force 2>/dev/null || true
+# Wait until MySQL is ready to accept connections
+until docker compose -f docker/compose/prod.yml exec -T mysql mysqladmin ping -h localhost -u vel_scada_user -psecret --silent 2>/dev/null; do
+    echo "   MySQL belum siap, menunggu..."
+    sleep 3
+done
+echo "✅ MySQL siap"
+
+# Wait a bit more for Laravel to be ready
+sleep 5
+
+# Run migrations
+echo ""
+echo "🔄 Menjalankan migrasi database..."
+docker compose -f docker/compose/prod.yml exec -T laravel php artisan migrate --force
 
 # Check if we need to seed
-USERS_COUNT=$(docker compose -f docker/compose/prod.yml exec -T laravel php artisan tinker --execute="echo App\Models\User::count();" 2>/dev/null | tr -d '[:space:]' || echo "0")
+echo ""
+echo "🔍 Mengecek data..."
+USERS_COUNT=$(docker compose -f docker/compose/prod.yml exec -T laravel php artisan tinker --execute="echo App\Models\User::count();" 2>/dev/null | grep -E '^[0-9]+$' | head -1 || echo "0")
 
 if [ "$USERS_COUNT" = "0" ] || [ -z "$USERS_COUNT" ]; then
-    echo "🌱 Mengisi data awal..."
-    docker compose -f docker/compose/prod.yml exec -T laravel php artisan db:seed --force 2>/dev/null || true
+    echo "🌱 Mengisi data awal (seeding)..."
+    docker compose -f docker/compose/prod.yml exec -T laravel php artisan db:seed --force
+else
+    echo "✅ Data sudah ada ($USERS_COUNT users)"
 fi
 
 echo ""

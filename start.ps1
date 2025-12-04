@@ -39,17 +39,44 @@ docker compose -f docker/compose/prod.yml up -d --build
 # Wait for MySQL to be ready
 Write-Host ""
 Write-Host "⏳ Menunggu database siap..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
+
+# Wait until MySQL is ready
+$maxRetries = 30
+$retryCount = 0
+do {
+    $retryCount++
+    $result = docker compose -f docker/compose/prod.yml exec -T mysql mysqladmin ping -h localhost -u vel_scada_user -psecret 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "   MySQL belum siap, menunggu... ($retryCount/$maxRetries)"
+        Start-Sleep -Seconds 3
+    }
+} while ($LASTEXITCODE -ne 0 -and $retryCount -lt $maxRetries)
+
+if ($retryCount -ge $maxRetries) {
+    Write-Host "❌ MySQL tidak bisa diakses setelah $maxRetries percobaan" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "✅ MySQL siap" -ForegroundColor Green
+
+# Wait a bit more for Laravel
+Start-Sleep -Seconds 5
 
 # Run migrations
-Write-Host "🔄 Menyiapkan database..." -ForegroundColor Yellow
-docker compose -f docker/compose/prod.yml exec -T laravel php artisan migrate --force 2>$null
+Write-Host ""
+Write-Host "🔄 Menjalankan migrasi database..." -ForegroundColor Yellow
+docker compose -f docker/compose/prod.yml exec -T laravel php artisan migrate --force
 
 # Check if we need to seed
-$usersCount = docker compose -f docker/compose/prod.yml exec -T laravel php artisan tinker --execute="echo App\Models\User::count();" 2>$null
-if ($usersCount -match "^0$" -or [string]::IsNullOrEmpty($usersCount)) {
-    Write-Host "🌱 Mengisi data awal..." -ForegroundColor Yellow
-    docker compose -f docker/compose/prod.yml exec -T laravel php artisan db:seed --force 2>$null
+Write-Host ""
+Write-Host "🔍 Mengecek data..." -ForegroundColor Yellow
+$usersCount = docker compose -f docker/compose/prod.yml exec -T laravel php artisan tinker --execute="echo App\Models\User::count();" 2>$null | Select-String -Pattern "^\d+$" | ForEach-Object { $_.Matches[0].Value }
+
+if ([string]::IsNullOrEmpty($usersCount) -or $usersCount -eq "0") {
+    Write-Host "🌱 Mengisi data awal (seeding)..." -ForegroundColor Yellow
+    docker compose -f docker/compose/prod.yml exec -T laravel php artisan db:seed --force
+} else {
+    Write-Host "✅ Data sudah ada ($usersCount users)" -ForegroundColor Green
 }
 
 Write-Host ""
