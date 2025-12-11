@@ -81,6 +81,11 @@ export default function Marketplace({
     systemPrice,
 }: MarketplaceProps) {
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+    const [buyDialogOpen, setBuyDialogOpen] = useState(false);
+    const [selectedListing, setSelectedListing] = useState<Listing | null>(
+        null
+    );
     const [energyKwh, setEnergyKwh] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -139,14 +144,14 @@ export default function Marketplace({
     };
 
     const handleCancelListing = (listingId: number) => {
-        if (!confirm("Batalkan listing ini?")) return;
-
         setIsSubmitting(true);
         router.post(
             route("marketplace.cancel-listing"),
             { listing_id: listingId },
             {
                 onSuccess: () => {
+                    setCancelDialogOpen(false);
+                    setSelectedListing(null);
                     toast.success("Listing dibatalkan");
                 },
                 onError: (errors) => {
@@ -163,14 +168,14 @@ export default function Marketplace({
             return;
         }
 
-        if (!confirm("Beli listing ini?")) return;
-
         setIsSubmitting(true);
         router.post(
             route("marketplace.buy"),
             { listing_id: listingId },
             {
                 onSuccess: () => {
+                    setBuyDialogOpen(false);
+                    setSelectedListing(null);
                     toast.success("Pembelian berhasil");
                 },
                 onError: (errors) => {
@@ -340,11 +345,14 @@ export default function Marketplace({
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() =>
-                                                        handleCancelListing(
-                                                            listing.id
-                                                        )
-                                                    }
+                                                    onClick={() => {
+                                                        setSelectedListing(
+                                                            listing
+                                                        );
+                                                        setCancelDialogOpen(
+                                                            true
+                                                        );
+                                                    }}
                                                     disabled={isSubmitting}
                                                 >
                                                     <X className="h-4 w-4 mr-1" />
@@ -416,12 +424,12 @@ export default function Marketplace({
                                             <TableCell className="text-right">
                                                 <Button
                                                     size="sm"
-                                                    onClick={() =>
-                                                        handleBuyListing(
-                                                            listing.id,
-                                                            listing.total_price
-                                                        )
-                                                    }
+                                                    onClick={() => {
+                                                        setSelectedListing(
+                                                            listing
+                                                        );
+                                                        setBuyDialogOpen(true);
+                                                    }}
                                                     disabled={
                                                         isSubmitting ||
                                                         walletBalance <
@@ -517,6 +525,156 @@ export default function Marketplace({
                             </Button>
                         </DialogFooter>
                     </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Cancel Listing Dialog */}
+            <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Batalkan Listing</DialogTitle>
+                        <DialogDescription>
+                            Anda yakin ingin membatalkan listing ini?
+                        </DialogDescription>
+                    </DialogHeader>
+                    {selectedListing && (
+                        <div className="rounded-lg bg-muted p-4 space-y-2">
+                            <div className="flex justify-between text-sm">
+                                <span>Energi:</span>
+                                <span className="font-medium">
+                                    {formatKwh(selectedListing.energy_kwh)} kWh
+                                </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span>Harga per kWh:</span>
+                                <span className="font-medium">
+                                    {formatCurrency(
+                                        selectedListing.price_per_kwh
+                                    )}
+                                </span>
+                            </div>
+                            <div className="border-t pt-2 flex justify-between font-semibold">
+                                <span>Total:</span>
+                                <span>
+                                    {formatCurrency(
+                                        selectedListing.total_price
+                                    )}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setCancelDialogOpen(false);
+                                setSelectedListing(null);
+                            }}
+                            disabled={isSubmitting}
+                        >
+                            Tidak
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() =>
+                                selectedListing &&
+                                handleCancelListing(selectedListing.id)
+                            }
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? "Memproses..." : "Ya, Batalkan"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Buy Listing Dialog */}
+            <Dialog open={buyDialogOpen} onOpenChange={setBuyDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Konfirmasi Pembelian</DialogTitle>
+                        <DialogDescription>
+                            Periksa detail pembelian energi Anda
+                        </DialogDescription>
+                    </DialogHeader>
+                    {selectedListing && (
+                        <div className="space-y-4">
+                            <div className="rounded-lg bg-muted p-4 space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span>Seller:</span>
+                                    <span className="font-medium">
+                                        {selectedListing.seller_name}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span>Energi:</span>
+                                    <span className="font-medium">
+                                        {formatKwh(selectedListing.energy_kwh)}{" "}
+                                        kWh
+                                    </span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span>Harga per kWh:</span>
+                                    <span className="font-medium">
+                                        {formatCurrency(
+                                            selectedListing.price_per_kwh
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="border-t pt-2 flex justify-between font-semibold">
+                                    <span>Total Bayar:</span>
+                                    <span className="text-green-600">
+                                        {formatCurrency(
+                                            selectedListing.total_price
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="rounded-lg bg-blue-50 dark:bg-blue-950 p-4 space-y-1">
+                                <div className="flex justify-between text-sm">
+                                    <span>Saldo Wallet:</span>
+                                    <span className="font-medium">
+                                        {formatCurrency(walletBalance)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span>Sisa Saldo:</span>
+                                    <span className="font-medium text-blue-600 dark:text-blue-400">
+                                        {formatCurrency(
+                                            walletBalance -
+                                                selectedListing.total_price
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setBuyDialogOpen(false);
+                                setSelectedListing(null);
+                            }}
+                            disabled={isSubmitting}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            onClick={() =>
+                                selectedListing &&
+                                handleBuyListing(
+                                    selectedListing.id,
+                                    selectedListing.total_price
+                                )
+                            }
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? "Memproses..." : "Konfirmasi Beli"}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </AppLayout>
