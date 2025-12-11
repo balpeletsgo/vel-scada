@@ -11,8 +11,8 @@ services:
     ports:
       - "8000:80"
     volumes:
-      - ../../backend:/var/www/html
       - ../nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - app-files:/var/www/html:ro
     depends_on:
       - laravel
       - ml-service
@@ -28,9 +28,7 @@ services:
       dockerfile: Dockerfile
     container_name: vel-scada-laravel
     volumes:
-      - ../../backend:/var/www/html
-      - /var/www/html/vendor
-      - /var/www/html/node_modules
+      - app-files:/var/www/html
     environment:
       - APP_ENV=local
       - APP_DEBUG=true
@@ -71,9 +69,6 @@ services:
       dockerfile: Dockerfile
     container_name: vel-scada-queue
     command: php artisan queue:work --sleep=3 --tries=3
-    volumes:
-      - ../../backend:/var/www/html
-      - /var/www/html/vendor
     environment:
       - APP_ENV=local
       - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
@@ -104,9 +99,6 @@ services:
       dockerfile: Dockerfile
     container_name: vel-scada-scheduler
     command: sh -c "while true; do php artisan schedule:run --verbose --no-interaction & sleep 60; done"
-    volumes:
-      - ../../backend:/var/www/html
-      - /var/www/html/vendor
     environment:
       - APP_ENV=local
       - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
@@ -140,9 +132,6 @@ services:
     command: php artisan reverb:start --host=0.0.0.0 --port=8080
     ports:
       - "8080:8080"
-    volumes:
-      - ../../backend:/var/www/html
-      - /var/www/html/vendor
     environment:
       - APP_ENV=local
       - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
@@ -176,9 +165,6 @@ services:
       dockerfile: Dockerfile
     container_name: vel-scada-simulator
     command: php artisan simulate:energy
-    volumes:
-      - ../../backend:/var/www/html
-      - /var/www/html/vendor
     environment:
       - APP_ENV=local
       - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
@@ -206,6 +192,44 @@ services:
       reverb:
         condition: service_started
       ml-service:
+        condition: service_started
+    networks:
+      - vel-scada-network
+    restart: unless-stopped
+
+  # ===================
+  # SOLAR BROADCASTER - Solar Panel Output Broadcaster
+  # ===================
+  solar-broadcaster:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: vel-scada-solar-broadcaster
+    command: php artisan broadcast:solar
+    environment:
+      - APP_ENV=local
+      - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=vel_scada
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REVERB_HOST=reverb
+      - REVERB_PORT=8080
+      - REVERB_APP_ID=vel-scada
+      - REVERB_APP_KEY=vel-scada-key
+      - REVERB_APP_SECRET=vel-scada-secret
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      laravel:
+        condition: service_started
+      reverb:
         condition: service_started
     networks:
       - vel-scada-network
@@ -297,6 +321,8 @@ services:
 # VOLUMES
 # ===================
 volumes:
+  app-files:
+    driver: local
   mysql-data:
     driver: local
   redis-data:

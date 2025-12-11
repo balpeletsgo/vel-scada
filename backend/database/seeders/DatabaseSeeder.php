@@ -17,7 +17,7 @@ class DatabaseSeeder extends Seeder
     {
         // Create 10 Prosumer users
         $prosumers = [
-            ['name' => 'Jhonest', 'email' => 'jones@example.com', 'address' => 'Jl. Merdeka No. 1, Jakarta'],
+            ['name' => 'Jhonest', 'email' => 'jhonest@example.com', 'address' => 'Jl. Merdeka No. 1, Jakarta'],
             ['name' => 'Dhafa Dito', 'email' => 'ditod@example.com', 'address' => 'Jl. Sudirman No. 25, Jakarta'],
             ['name' => 'Fadhli', 'email' => 'fadhli@example.com', 'address' => 'Jl. Gatot Subroto No. 10, Jakarta'],
         ];
