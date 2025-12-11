@@ -1,5 +1,4 @@
-import AppLayout from "@/Layouts/AppLayout";
-import { Head, usePage, router } from "@inertiajs/react";
+import { Badge } from "@/components/ui/badge";
 import {
     Card,
     CardContent,
@@ -7,12 +6,6 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
     ChartConfig,
     ChartContainer,
@@ -21,22 +14,24 @@ import {
     ChartTooltip,
     ChartTooltipContent,
 } from "@/components/ui/chart";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useEnergyData } from "@/hooks/useEnergyData";
+import AppLayout from "@/Layouts/AppLayout";
+import { Head, router, usePage } from "@inertiajs/react";
+import axios from "axios";
 import {
-    Battery,
-    Sun,
-    ArrowRight,
-    ArrowDown,
     Activity,
-    Radio,
-    Gauge,
-    TrendingUp,
+    ArrowRight,
+    Battery,
     Home,
     Plug,
+    Radio,
+    Sun,
+    TrendingUp,
 } from "lucide-react";
-import { useEnergyData } from "@/hooks/useEnergyData";
-import { useEffect, useState, useMemo, FormEvent } from "react";
-import axios from "axios";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 interface EnergyData {
     mainPower: { current: number; unit: string };
@@ -106,7 +101,7 @@ const energyChartConfig = {
     battery: { label: "Battery", color: "hsl(142, 76%, 36%)" },
 } satisfies ChartConfig;
 
-import { formatKwh, formatCurrency } from "@/lib/formatters";
+import { formatCurrency, formatKwh } from "@/lib/formatters";
 
 const toNumber = (value: any, defaultValue: number = 0): number => {
     const num = Number(value);
@@ -409,23 +404,9 @@ export default function Dashboard({
         }
     };
 
-    // Chart data - priority: 1. WebSocket realtime, 2. Database history, 3. Local history
+    // Chart data - hanya dari database (chartHistory)
     const chartData = useMemo(() => {
-        // Priority 1: Realtime WebSocket history
-        if (history.length > 0) {
-            return history.map((item) => ({
-                time: new Date(item.timestamp).toLocaleTimeString("id-ID", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                }),
-                mainPower: toNumber(item.main_power, 0),
-                consumption: toNumber(item.consumption, 0.046),
-                battery: toNumber(item.battery_level, 0),
-                solar: toNumber(item.solar_output, 0),
-            }));
-        }
-
-        // Priority 2: Database history (from props)
+        // Gunakan data dari database (activity_logs)
         if (chartHistory.length > 0) {
             return chartHistory.map((item) => ({
                 time: item.time,
@@ -436,12 +417,7 @@ export default function Dashboard({
             }));
         }
 
-        // Priority 3: Local history (from transfers/local actions)
-        if (localHistory.length > 0) {
-            return localHistory;
-        }
-
-        // Fallback: Generate sample data
+        // Fallback: Generate sample data jika database kosong
         const now = new Date();
         const sampleData = [];
         let currentMainPower = liveStats.mainPower;
@@ -462,9 +438,7 @@ export default function Dashboard({
         }
         return sampleData;
     }, [
-        history,
         chartHistory,
-        localHistory,
         liveStats.mainPower,
         liveStats.batteryKwh,
         liveStats.solarOutput,
@@ -617,8 +591,7 @@ export default function Dashboard({
                                             📊 Energy Usage Log
                                         </CardTitle>
                                         <CardDescription>
-                                            Main Power berkurang seiring
-                                            consumption per menit
+                                            Grafik penggunaan energi
                                         </CardDescription>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -745,22 +718,6 @@ export default function Dashboard({
                                         />
                                     </AreaChart>
                                 </ChartContainer>
-                                <div className="mt-4 grid grid-cols-2 gap-4 text-center text-sm">
-                                    <div className="p-2 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
-                                        <p className="text-blue-600 font-semibold">
-                                            Main Power
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            Berkurang {formatKwh(0.046)} kWh/10
-                                            menit
-                                        </p>
-                                    </div>
-                                    <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded-lg h-full flex flex-row items-center justify-center">
-                                        <p className="text-green-600 font-semibold">
-                                            Battery
-                                        </p>
-                                    </div>
-                                </div>
                             </CardContent>
                         </Card>
                     ) : (
