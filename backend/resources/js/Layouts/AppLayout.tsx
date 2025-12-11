@@ -46,6 +46,7 @@ import {
     Zap,
     Settings,
     Wallet,
+    Activity,
 } from "lucide-react";
 
 interface UserType {
@@ -62,6 +63,7 @@ const menuItems = [
         title: "Dashboard",
         items: [
             { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
+            { title: "Realtime Monitor", url: "/realtime", icon: Activity },
         ],
     },
     {

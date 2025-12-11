@@ -23,11 +23,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/transfer', [TransferController::class, 'index'])->name('transfer');
     Route::post('/transfer', [TransferController::class, 'store'])->name('transfer.store');
 
+    // Realtime Monitor
+    Route::get('/realtime', [DashboardController::class, 'realtime'])->name('realtime');
+
     // Marketplace
     Route::get('/marketplace', [MarketplaceController::class, 'index'])->name('marketplace');
-    Route::post('/marketplace/add-stock', [MarketplaceController::class, 'addStock'])->name('marketplace.add-stock');
-    Route::post('/marketplace/withdraw-stock', [MarketplaceController::class, 'withdrawStock'])->name('marketplace.withdraw-stock');
-    Route::post('/marketplace/toggle-selling', [MarketplaceController::class, 'toggleSelling'])->name('marketplace.toggle-selling');
+    Route::post('/marketplace/create-listing', [MarketplaceController::class, 'createListing'])->name('marketplace.create-listing');
+    Route::post('/marketplace/cancel-listing', [MarketplaceController::class, 'cancelListing'])->name('marketplace.cancel-listing');
     Route::post('/marketplace/buy', [MarketplaceController::class, 'buy'])->name('marketplace.buy');
 
     // Transactions

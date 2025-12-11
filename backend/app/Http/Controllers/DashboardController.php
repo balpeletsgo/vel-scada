@@ -5,9 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\SolarPanel;
 use App\Models\EnergyStorage;
+use App\Models\EnergyProduction;
+use App\Models\EnergyConsumption;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use App\Models\EnergyStorageLog;
+use App\Models\ActivityLog;
 
 class DashboardController extends Controller
 {
@@ -20,6 +24,9 @@ class DashboardController extends Controller
 
         // Get battery/energy storage data
         $energyStorage = EnergyStorage::where('user_id', $user->id)->first();
+
+        // Get chart history from database (last 30 records)
+        $chartHistory = $this->getChartHistory($user->id, $solarPanel?->id);
 
         // Get public/global recent transactions (all users)
         $publicTransactions = Transaction::with(['seller', 'buyer'])
@@ -84,6 +91,7 @@ class DashboardController extends Controller
                     'unit' => 'kWh',
                 ],
             ],
+            'chartHistory' => $chartHistory,
             'publicTransactions' => $publicTransactions,
             'user' => [
                 'id' => $user->id,
@@ -94,5 +102,72 @@ class DashboardController extends Controller
                 'is_active' => $user->is_active,
             ],
         ]);
+    }
+
+    /**
+     * Realtime Monitor page
+     */
+    public function realtime(Request $request)
+    {
+        $user = $request->user();
+
+        // Get recent solar activity logs (only solar type, only current user)
+        $activityLogs = ActivityLog::with('user')
+            ->where('type', 'solar')
+            ->where('user_id', $user->id)
+            ->orderBy('logged_at', 'desc')
+            ->take(100)
+            ->get()
+            ->map(function ($log) {
+                return [
+                    'id' => $log->id,
+                    'user_id' => $log->user_id,
+                    'user_name' => $log->user?->name ?? 'System',
+                    'type' => $log->type,
+                    'action' => $log->action,
+                    'description' => $log->description,
+                    'metadata' => $log->metadata,
+                    'logged_at' => $log->logged_at->toISOString(),
+                    'time_ago' => $log->logged_at->diffForHumans(),
+                ];
+            });
+
+        return Inertia::render('RealtimeMonitor', [
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+            ],
+            'activityLogs' => $activityLogs,
+        ]);
+    }
+
+    /**
+     * Get chart history from database - using energy_storage_logs for accurate history
+     */
+    private function getChartHistory(int $userId, ?int $solarPanelId): array
+    {
+        // Get last 30 energy storage logs (includes all changes: charging, transfer, etc)
+        $logs = EnergyStorageLog::where('user_id', $userId)
+            ->orderBy('recorded_at', 'desc')
+            ->take(30)
+            ->get()
+            ->reverse()
+            ->values();
+
+        // Build chart data from logs
+        $chartData = [];
+
+        foreach ($logs as $log) {
+            $chartData[] = [
+                'time' => $log->recorded_at->format('H:i:s'),
+                'timestamp' => $log->recorded_at->toIso8601String(),
+                'solar' => round((float) $log->solar_output, 4), // kWh
+                'mainPower' => round((float) $log->main_power_kwh, 4), // kWh
+                'battery' => round((float) $log->battery_kwh, 4), // kWh
+                'action' => $log->action,
+            ];
+        }
+
+        return $chartData;
     }
 }

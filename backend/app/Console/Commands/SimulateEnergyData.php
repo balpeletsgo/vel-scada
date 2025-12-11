@@ -6,6 +6,7 @@ use App\Events\EnergyDataUpdated;
 use App\Models\User;
 use App\Models\EnergyProduction;
 use App\Models\EnergyConsumption;
+use App\Models\EnergyStorageLog;
 use App\Models\ScadaReading;
 use Illuminate\Console\Command;
 
@@ -68,10 +69,14 @@ class SimulateEnergyData extends Command
         $intervalFactor = self::INTERVAL_SECONDS / 3600; // 60/3600 = 0.0167
 
         // === SOLAR GENERATION (only 06:00 - 18:00) ===
-        $solarGenerated = 0;
-        if ($hour >= 6 && $hour <= 18) {
-            $solarGenerated = self::SOLAR_OUTPUT_PER_HOUR * $intervalFactor; // 0.37 * 0.0167 = 0.00617 kWh
-        }
+        // TODO: Uncomment this for production
+        // $solarGenerated = 0;
+        // if ($hour >= 6 && $hour <= 18) {
+        //     $solarGenerated = self::SOLAR_OUTPUT_PER_HOUR * $intervalFactor;
+        // }
+
+        // DEBUG: Solar always active (remove this for production)
+        $solarGenerated = self::SOLAR_OUTPUT_PER_HOUR * $intervalFactor;
 
         // Add solar to battery (max 100 kWh)
         $batteryKwh = (float) $battery->current_kwh;
@@ -109,6 +114,7 @@ class SimulateEnergyData extends Command
         // Save production
         if ($solarGenerated > 0) {
             EnergyProduction::create([
+                'user_id' => $user->id,
                 'solar_panel_id' => $panel->id,
                 'produced_kwh' => round($solarGenerated, 6),
                 'recorded_at' => $now,
@@ -120,6 +126,17 @@ class SimulateEnergyData extends Command
             'user_id' => $user->id,
             'consumed_kwh' => round($consumption, 6),
             'source_type' => 'grid', // Main power = grid
+            'recorded_at' => $now,
+        ]);
+
+        // === LOG ENERGY STORAGE STATE ===
+        EnergyStorageLog::create([
+            'user_id' => $user->id,
+            'energy_storage_id' => $battery->id,
+            'battery_kwh' => round($batteryKwh, 4),
+            'main_power_kwh' => round($mainPowerKwh, 4),
+            'solar_output' => round($solarGenerated, 6),
+            'action' => $batteryStatus,
             'recorded_at' => $now,
         ]);
 

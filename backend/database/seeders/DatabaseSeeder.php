@@ -82,10 +82,20 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // Seed initial system price
+        // Seed initial system price FIRST
         $this->call(SystemPriceSeeder::class);
+
+        // Seed initial energy storage logs for chart history
+        $this->call(EnergyStorageLogSeeder::class);
+
+        // Seed historical transactions for demand calculation
+        $this->call(TransactionSeeder::class);
+
+        // Seed energy listings (marketplace) - needs system price to be available
+        $this->call(EnergyListingSeeder::class);
 
         $this->command->info('Seeded: 3 Prosumers (each with solar 0.37kWh/jam, battery 100kWh, main_power 66kWh)');
         $this->command->info('Seeded: System Price (PLN R-1/TR 1.300 VA = Rp 1.444,70/kWh)');
+        $this->command->info('Seeded: Energy Storage Logs (10 initial chart data points per user)');
     }
 }

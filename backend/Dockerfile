@@ -48,9 +48,6 @@ RUN composer install --no-interaction --prefer-dist --optimize-autoloader --no-s
 # Copy the rest of the application
 COPY . .
 
-# Debug: List ui components to verify files are copied
-RUN ls -la resources/js/components/ui/ | head -20
-
 # Build frontend
 RUN npm run build
 

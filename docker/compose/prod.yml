@@ -1,3 +1,6 @@
+# Production Docker Compose
+# Usage: docker compose -f docker/compose/prod.yml up -d --build
+
 services:
   # ===================
   # NGINX - Reverse Proxy
@@ -31,13 +34,13 @@ services:
     environment:
       - APP_ENV=local
       - APP_DEBUG=true
-      - APP_KEY=${APP_KEY:-base64:your-app-key-here}
+      - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
       - DB_CONNECTION=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_DATABASE=vel_scada
-      - DB_USERNAME=vel_scada_user
-      - DB_PASSWORD=secret
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - ML_SERVICE_URL=http://ml-service:8001
@@ -52,8 +55,10 @@ services:
       - VITE_REVERB_PORT=8080
       - VITE_REVERB_SCHEME=http
     depends_on:
-      - mysql
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - vel-scada-network
 
@@ -71,19 +76,22 @@ services:
       - /var/www/html/vendor
     environment:
       - APP_ENV=local
-      - APP_KEY=${APP_KEY:-base64:your-app-key-here}
+      - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
       - DB_CONNECTION=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_DATABASE=vel_scada
-      - DB_USERNAME=vel_scada_user
-      - DB_PASSWORD=secret
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - mysql
-      - redis
-      - laravel
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      laravel:
+        condition: service_started
     networks:
       - vel-scada-network
 
@@ -101,20 +109,23 @@ services:
       - /var/www/html/vendor
     environment:
       - APP_ENV=local
-      - APP_KEY=${APP_KEY:-base64:your-app-key-here}
+      - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
       - DB_CONNECTION=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_DATABASE=vel_scada
-      - DB_USERNAME=vel_scada_user
-      - DB_PASSWORD=secret
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - ML_SERVICE_URL=http://ml-service:8001
     depends_on:
-      - mysql
-      - redis
-      - laravel
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      laravel:
+        condition: service_started
     networks:
       - vel-scada-network
 
@@ -134,22 +145,25 @@ services:
       - /var/www/html/vendor
     environment:
       - APP_ENV=local
-      - APP_KEY=${APP_KEY:-base64:your-app-key-here}
+      - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
       - DB_CONNECTION=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_DATABASE=vel_scada
-      - DB_USERNAME=vel_scada_user
-      - DB_PASSWORD=secret
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REVERB_APP_ID=vel-scada
       - REVERB_APP_KEY=vel-scada-key
       - REVERB_APP_SECRET=vel-scada-secret
     depends_on:
-      - mysql
-      - redis
-      - laravel
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      laravel:
+        condition: service_started
     networks:
       - vel-scada-network
 
@@ -167,13 +181,13 @@ services:
       - /var/www/html/vendor
     environment:
       - APP_ENV=local
-      - APP_KEY=${APP_KEY:-base64:your-app-key-here}
+      - APP_KEY=${APP_KEY:-base64:gsxd4a9aZkbw85PbNWXdW44+tEyaYoXj3phaRdrpBmA=}
       - DB_CONNECTION=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_DATABASE=vel_scada
-      - DB_USERNAME=vel_scada_user
-      - DB_PASSWORD=secret
+      - DB_USERNAME=root
+      - DB_PASSWORD=password
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REVERB_HOST=reverb
@@ -183,13 +197,19 @@ services:
       - REVERB_APP_SECRET=vel-scada-secret
       - ML_SERVICE_URL=http://ml-service:8001
     depends_on:
-      - mysql
-      - redis
-      - laravel
-      - reverb
-      - ml-service
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      laravel:
+        condition: service_started
+      reverb:
+        condition: service_started
+      ml-service:
+        condition: service_started
     networks:
       - vel-scada-network
+    restart: unless-stopped
 
   # ===================
   # ML SERVICE - Python FastAPI
@@ -220,13 +240,26 @@ services:
     ports:
       - "3306:3306"
     environment:
-      - MYSQL_ROOT_PASSWORD=root_secret
+      - MYSQL_ROOT_PASSWORD=password
       - MYSQL_DATABASE=vel_scada
-      - MYSQL_USER=vel_scada_user
-      - MYSQL_PASSWORD=secret
     volumes:
       - mysql-data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-ppassword",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - vel-scada-network
 
@@ -253,8 +286,8 @@ services:
       - "8888:80"
     environment:
       - PMA_HOST=mysql
-      - PMA_USER=vel_scada_user
-      - PMA_PASSWORD=secret
+      - PMA_USER=root
+      - PMA_PASSWORD=password
     depends_on:
       - mysql
     networks:

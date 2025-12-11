@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\EnergyStorage;
+use App\Models\EnergyStorageLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -71,6 +72,17 @@ class TransferController extends Controller
             // Increase main power
             $user->main_power_kwh += $amount;
             $user->save();
+
+            // Log the transfer
+            EnergyStorageLog::create([
+                'user_id' => $user->id,
+                'energy_storage_id' => $battery->id,
+                'battery_kwh' => $battery->current_kwh,
+                'main_power_kwh' => $user->main_power_kwh,
+                'solar_output' => 0,
+                'action' => 'transfer',
+                'recorded_at' => now(),
+            ]);
 
             // Reset battery status after transfer
             $battery->status = 'idle';

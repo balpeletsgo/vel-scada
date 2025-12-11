@@ -4,8 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Jobs\SyncEnergyPriceJob;
 use App\Models\User;
-use App\Models\EnergyPrice;
+use App\Models\EnergyListing;
 use App\Models\EnergyStorage;
+use App\Models\EnergyStorageLog;
 use App\Models\SystemPrice;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
@@ -15,7 +16,7 @@ use Inertia\Inertia;
 class MarketplaceController extends Controller
 {
     /**
-     * Display marketplace with available sellers
+     * Display marketplace with available listings
      */
     public function index(Request $request)
     {
@@ -25,38 +26,45 @@ class MarketplaceController extends Controller
         $systemPrice = SystemPrice::current();
         $currentPrice = $systemPrice ? (float) $systemPrice->final_price : 1444.70;
 
-        // Get current user's energy price setting
-        $myEnergyPrice = EnergyPrice::where('user_id', $user->id)->first();
-
         // Get user's battery
         $myBattery = EnergyStorage::where('user_id', $user->id)->first();
 
-        // Get all active sellers (excluding current user) with stock > 0
-        $sellers = EnergyPrice::with(['user'])
-            ->where('is_selling', true)
-            ->where('user_id', '!=', $user->id)
-            ->where('stock_kwh', '>=', 1) // At least 1 kWh stock available
+        // Get my active listings
+        $myListings = EnergyListing::where('user_id', $user->id)
+            ->where('status', 'available')
+            ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function ($energyPrice) use ($currentPrice) {
+            ->map(function ($listing) use ($currentPrice) {
                 return [
-                    'id' => $energyPrice->id,
-                    'user_id' => $energyPrice->user_id,
-                    'seller_name' => $energyPrice->user->name,
-                    'price_per_kwh' => $currentPrice, // Use system price
-                    'stock_kwh' => (float) $energyPrice->stock_kwh,
-                    'is_selling' => $energyPrice->is_selling,
+                    'id' => $listing->id,
+                    'energy_kwh' => (float) $listing->energy_kwh,
+                    'price_per_kwh' => $currentPrice,
+                    'total_price' => (float) $listing->energy_kwh * $currentPrice,
+                    'created_at' => $listing->created_at->format('d M Y H:i'),
                 ];
-            })
-            ->values();
+            });
+
+        // Get all available listings from other users
+        $listings = EnergyListing::with(['seller'])
+            ->where('status', 'available')
+            ->where('user_id', '!=', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($listing) use ($currentPrice) {
+                return [
+                    'id' => $listing->id,
+                    'seller_id' => $listing->user_id,
+                    'seller_name' => $listing->seller->name,
+                    'energy_kwh' => (float) $listing->energy_kwh,
+                    'price_per_kwh' => $currentPrice,
+                    'total_price' => (float) $listing->energy_kwh * $currentPrice,
+                    'created_at' => $listing->created_at->format('d M Y H:i'),
+                ];
+            });
 
         return Inertia::render('Marketplace/Index', [
-            'sellers' => $sellers,
-            'myEnergyPrice' => $myEnergyPrice ? [
-                'id' => $myEnergyPrice->id,
-                'price_per_kwh' => $currentPrice, // Use system price
-                'stock_kwh' => (float) $myEnergyPrice->stock_kwh,
-                'is_selling' => $myEnergyPrice->is_selling,
-            ] : null,
+            'listings' => $listings,
+            'myListings' => $myListings,
             'myBattery' => $myBattery ? [
                 'current_kwh' => (float) $myBattery->current_kwh,
                 'max_capacity' => (float) $myBattery->max_capacity,
@@ -79,68 +87,86 @@ class MarketplaceController extends Controller
     }
 
     /**
-     * Add stock to sell (transfer from battery to stock)
+     * Create a new listing
      */
-    public function addStock(Request $request)
+    public function createListing(Request $request)
     {
         $request->validate([
-            'amount' => 'required|numeric|min:1',
+            'energy_kwh' => 'required|numeric|min:1|max:50',
         ], [
-            'amount.required' => 'Jumlah energi harus diisi',
-            'amount.min' => 'Minimal 1 kWh',
+            'energy_kwh.required' => 'Jumlah energi harus diisi',
+            'energy_kwh.min' => 'Minimal 1 kWh per listing',
+            'energy_kwh.max' => 'Maksimal 50 kWh per listing',
         ]);
 
         $user = $request->user();
-        $amount = (float) $request->amount;
+        $energyKwh = (float) $request->energy_kwh;
 
         // Check if user has battery with enough energy
         $battery = EnergyStorage::where('user_id', $user->id)->first();
-        if (!$battery || $battery->current_kwh < $amount) {
-            return back()->withErrors(['amount' => 'Energi di battery tidak mencukupi']);
+        if (!$battery || $battery->current_kwh < $energyKwh) {
+            return back()->withErrors(['energy_kwh' => 'Energi di battery tidak mencukupi']);
         }
 
-        DB::transaction(function () use ($user, $battery, $amount) {
+        // Get current system price (save as snapshot for history/reference only)
+        $systemPrice = SystemPrice::current();
+        $pricePerKwh = $systemPrice ? (float) $systemPrice->final_price : 1444.70;
+        $totalPrice = $energyKwh * $pricePerKwh;
+
+        DB::transaction(function () use ($user, $battery, $energyKwh, $pricePerKwh, $totalPrice) {
             // Deduct from battery
-            $battery->current_kwh -= $amount;
+            $battery->current_kwh -= $energyKwh;
             $battery->save();
 
-            // Add to stock (create or update energy price)
-            $energyPrice = EnergyPrice::firstOrCreate(
-                ['user_id' => $user->id],
-                ['price_per_kwh' => SystemPrice::currentPrice(), 'stock_kwh' => 0, 'is_selling' => false]
-            );
+            // Create listing
+            EnergyListing::create([
+                'user_id' => $user->id,
+                'energy_kwh' => $energyKwh,
+                'price_per_kwh' => $pricePerKwh,
+                'total_price' => $totalPrice,
+                'status' => 'available',
+            ]);
 
-            $energyPrice->stock_kwh += $amount;
-            $energyPrice->is_selling = true; // Automatically start selling
-            $energyPrice->save();
+            // Log to energy_storage_logs
+            EnergyStorageLog::create([
+                'user_id' => $user->id,
+                'energy_storage_id' => $battery->id,
+                'battery_kwh' => $battery->current_kwh,
+                'main_power_kwh' => $user->main_power_kwh ?? 0,
+                'solar_output' => 0,
+                'action' => 'sell',
+                'recorded_at' => now(),
+            ]);
         });
 
-        // Sync price (supply changed)
-        SyncEnergyPriceJob::dispatch();
+        // Sync price immediately (supply changed)
+        SyncEnergyPriceJob::dispatchSync();
 
-        $formattedAmount = floor($amount) == $amount ? (int) $amount : number_format($amount, 2);
-        return back()->with('success', "Berhasil menambahkan {$formattedAmount} kWh ke stok jual");
+        $formattedAmount = floor($energyKwh) == $energyKwh ? (int) $energyKwh : number_format($energyKwh, 2);
+        $formattedPrice = number_format($totalPrice, 0, ',', '.');
+        return back()->with('success', "Listing {$formattedAmount} kWh berhasil dibuat (Total: Rp {$formattedPrice})");
     }
 
     /**
-     * Withdraw stock back to battery
+     * Cancel a listing (return energy to battery)
      */
-    public function withdrawStock(Request $request)
+    public function cancelListing(Request $request)
     {
         $request->validate([
-            'amount' => 'required|numeric|min:1',
-        ], [
-            'amount.required' => 'Jumlah energi harus diisi',
-            'amount.min' => 'Minimal 1 kWh',
+            'listing_id' => 'required|exists:energy_listings,id',
         ]);
 
         $user = $request->user();
-        $amount = (float) $request->amount;
+        $listing = EnergyListing::find($request->listing_id);
 
-        // Get energy price with stock
-        $energyPrice = EnergyPrice::where('user_id', $user->id)->first();
-        if (!$energyPrice || $energyPrice->stock_kwh < $amount) {
-            return back()->withErrors(['amount' => 'Stok jual tidak mencukupi']);
+        // Check ownership
+        if ($listing->user_id !== $user->id) {
+            return back()->withErrors(['listing' => 'Anda tidak memiliki listing ini']);
+        }
+
+        // Check status
+        if ($listing->status !== 'available') {
+            return back()->withErrors(['listing' => 'Listing ini sudah tidak tersedia']);
         }
 
         // Check battery capacity
@@ -150,95 +176,77 @@ class MarketplaceController extends Controller
         }
 
         $remainingCapacity = $battery->max_capacity - $battery->current_kwh;
-        if ($amount > $remainingCapacity) {
-            return back()->withErrors(['amount' => "Battery hanya dapat menampung {$remainingCapacity} kWh lagi"]);
+        if ($listing->energy_kwh > $remainingCapacity) {
+            return back()->withErrors(['battery' => "Battery hanya dapat menampung {$remainingCapacity} kWh lagi"]);
         }
 
-        DB::transaction(function () use ($battery, $energyPrice, $amount) {
-            // Deduct from stock
-            $energyPrice->stock_kwh -= $amount;
-            if ($energyPrice->stock_kwh < 1) {
-                $energyPrice->is_selling = false; // Stop selling if stock < 1
-            }
-            $energyPrice->save();
-
-            // Add back to battery
-            $battery->current_kwh += $amount;
+        DB::transaction(function () use ($user, $battery, $listing) {
+            // Return energy to battery
+            $battery->current_kwh += $listing->energy_kwh;
             $battery->save();
+
+            // Cancel listing
+            $listing->cancel();
+
+            // Log to energy_storage_logs
+            EnergyStorageLog::create([
+                'user_id' => $user->id,
+                'energy_storage_id' => $battery->id,
+                'battery_kwh' => $battery->current_kwh,
+                'main_power_kwh' => $user->main_power_kwh ?? 0,
+                'solar_output' => 0,
+                'action' => 'charging', // Energy back to battery = charging
+                'recorded_at' => now(),
+            ]);
         });
 
-        // Sync price (supply changed)
-        SyncEnergyPriceJob::dispatch();
+        // Sync price immediately (supply changed)
+        SyncEnergyPriceJob::dispatchSync();
 
-        $formattedAmount = floor($amount) == $amount ? (int) $amount : number_format($amount, 2);
-        return back()->with('success', "Berhasil menarik {$formattedAmount} kWh dari stok jual ke battery");
+        $formattedAmount = floor($listing->energy_kwh) == $listing->energy_kwh ? (int) $listing->energy_kwh : number_format($listing->energy_kwh, 2);
+        return back()->with('success', "Listing {$formattedAmount} kWh berhasil dibatalkan");
     }
 
     /**
-     * Toggle selling status
+     * Toggle selling status (deprecated - not used in new system)
      */
     public function toggleSelling(Request $request)
     {
-        $user = $request->user();
-
-        $energyPrice = EnergyPrice::where('user_id', $user->id)->first();
-        if (!$energyPrice) {
-            return back()->withErrors(['stock' => 'Anda belum memiliki stok jual']);
-        }
-
-        if (!$energyPrice->is_selling && $energyPrice->stock_kwh < 1) {
-            return back()->withErrors(['stock' => 'Tidak dapat mengaktifkan penjualan. Stok jual kosong.']);
-        }
-
-        $energyPrice->is_selling = !$energyPrice->is_selling;
-        $energyPrice->save();
-
-        $status = $energyPrice->is_selling ? 'aktif' : 'nonaktif';
-        return back()->with('success', "Status penjualan {$status}");
+        return back()->with('info', 'Fitur ini sudah tidak digunakan. Gunakan Create Listing untuk menjual energi.');
     }
 
     /**
-     * Buy energy from a seller
+     * Buy a listing
      */
     public function buy(Request $request)
     {
         $request->validate([
-            'seller_id' => 'required|exists:users,id',
-            'amount' => 'required|numeric|min:1',
+            'listing_id' => 'required|exists:energy_listings,id',
         ], [
-            'seller_id.required' => 'Penjual harus dipilih',
-            'seller_id.exists' => 'Penjual tidak ditemukan',
-            'amount.required' => 'Jumlah energi harus diisi',
-            'amount.min' => 'Minimal pembelian 1 kWh',
+            'listing_id.required' => 'Listing harus dipilih',
+            'listing_id.exists' => 'Listing tidak ditemukan',
         ]);
 
         $buyer = $request->user();
-        $sellerId = $request->seller_id;
-        $amount = (float) $request->amount;
+        $listing = EnergyListing::with('seller')->find($request->listing_id);
+
+        // Check listing status
+        if ($listing->status !== 'available') {
+            return back()->withErrors(['listing' => 'Listing sudah tidak tersedia']);
+        }
 
         // Can't buy from yourself
-        if ($buyer->id === $sellerId) {
-            return back()->withErrors(['seller_id' => 'Tidak dapat membeli dari diri sendiri']);
+        if ($buyer->id === $listing->user_id) {
+            return back()->withErrors(['listing' => 'Tidak dapat membeli listing sendiri']);
         }
 
-        // Get seller and their energy price/stock
-        $seller = User::find($sellerId);
-        $energyPrice = EnergyPrice::where('user_id', $sellerId)
-            ->where('is_selling', true)
-            ->first();
+        $seller = $listing->seller;
+        $energyKwh = (float) $listing->energy_kwh;
 
-        if (!$energyPrice) {
-            return back()->withErrors(['seller_id' => 'Penjual tidak aktif menjual']);
-        }
-
-        // Check seller's stock
-        if ($energyPrice->stock_kwh < $amount) {
-            return back()->withErrors(['amount' => 'Stok penjual tidak mencukupi. Tersedia: ' . number_format($energyPrice->stock_kwh, 2) . ' kWh']);
-        }
-
-        // Get system price (all transactions use same price)
-        $pricePerKwh = SystemPrice::currentPrice();
-        $totalPrice = $amount * $pricePerKwh;
+        // Use REAL-TIME system price, not snapshot
+        $systemPrice = SystemPrice::current();
+        $pricePerKwh = $systemPrice ? (float) $systemPrice->final_price : 1444.70;
+        $totalPrice = $energyKwh * $pricePerKwh;
 
         // Check buyer's wallet balance
         if ($buyer->wallet_balance < $totalPrice) {
@@ -253,24 +261,16 @@ class MarketplaceController extends Controller
 
         // Check buyer battery capacity
         $remainingCapacity = $buyerBattery->max_capacity - $buyerBattery->current_kwh;
-        if ($amount > $remainingCapacity) {
-            return back()->withErrors(['amount' => "Battery Anda hanya dapat menampung " . number_format($remainingCapacity, 2) . " kWh lagi"]);
+        if ($energyKwh > $remainingCapacity) {
+            return back()->withErrors(['battery' => "Battery Anda hanya dapat menampung " . number_format($remainingCapacity, 2) . " kWh lagi"]);
         }
 
         // Perform transaction
-        DB::transaction(function () use ($buyer, $seller, $buyerBattery, $energyPrice, $amount, $pricePerKwh, $totalPrice) {
-            // Store before values (stock is seller's "battery" in marketplace context)
-            $sellerStockBefore = $energyPrice->stock_kwh;
+        DB::transaction(function () use ($buyer, $seller, $buyerBattery, $listing, $energyKwh, $totalPrice) {
             $buyerBatteryBefore = $buyerBattery->current_kwh;
 
-            // Transfer energy: seller stock -> buyer battery
-            $energyPrice->stock_kwh -= $amount;
-            if ($energyPrice->stock_kwh < 1) {
-                $energyPrice->is_selling = false; // Stop selling if stock < 1
-            }
-            $energyPrice->save();
-
-            $buyerBattery->current_kwh += $amount;
+            // Transfer energy: listing -> buyer battery
+            $buyerBattery->current_kwh += $energyKwh;
             $buyerBattery->save();
 
             // Transfer money: buyer wallet -> seller wallet
@@ -280,26 +280,40 @@ class MarketplaceController extends Controller
             $seller->wallet_balance += $totalPrice;
             $seller->save();
 
+            // Mark listing as sold
+            $listing->markAsSold($buyer->id);
+
             // Create transaction record
             Transaction::create([
                 'seller_id' => $seller->id,
                 'buyer_id' => $buyer->id,
-                'energy_kwh' => $amount,
-                'price_per_kwh' => $pricePerKwh,
+                'energy_kwh' => $energyKwh,
+                'price_per_kwh' => $listing->price_per_kwh,
                 'total_price' => $totalPrice,
-                'seller_battery_before' => $sellerStockBefore,
-                'seller_battery_after' => $energyPrice->stock_kwh,
+                'seller_battery_before' => 0, // N/A for listing-based
+                'seller_battery_after' => 0,  // N/A for listing-based
                 'buyer_battery_before' => $buyerBatteryBefore,
                 'buyer_battery_after' => $buyerBattery->current_kwh,
                 'status' => 'completed',
                 'completed_at' => now(),
             ]);
+
+            // Log buyer's battery change
+            EnergyStorageLog::create([
+                'user_id' => $buyer->id,
+                'energy_storage_id' => $buyerBattery->id,
+                'battery_kwh' => $buyerBattery->current_kwh,
+                'main_power_kwh' => $buyer->main_power_kwh ?? 0,
+                'solar_output' => 0,
+                'action' => 'buy',
+                'recorded_at' => now(),
+            ]);
         });
 
-        // Sync price after transaction (supply/demand changed)
-        SyncEnergyPriceJob::dispatch();
+        // Sync price immediately after transaction (supply/demand changed)
+        SyncEnergyPriceJob::dispatchSync();
 
-        $formattedAmount = floor($amount) == $amount ? (int) $amount : number_format($amount, 2);
+        $formattedAmount = floor($energyKwh) == $energyKwh ? (int) $energyKwh : number_format($energyKwh, 2);
         $formattedPrice = number_format($totalPrice, 0, ',', '.');
 
         return back()->with('success', "Berhasil membeli {$formattedAmount} kWh dari {$seller->name} seharga Rp {$formattedPrice}");

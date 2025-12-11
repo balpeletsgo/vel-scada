@@ -25,7 +25,7 @@ services:
     build:
       context: ../../backend
       dockerfile: ../docker/Dockerfile.dev
-    container_name: vel-scada-laravel
+    container_name: vel-scada-laravel-dev
     volumes:
       - ../../backend:/var/www/html:cached
     environment:
@@ -86,7 +86,7 @@ services:
       - vel-scada-network
 
   # ===================
-  # SIMULATOR - Energy Data Simulator
+  # SIMULATOR - Energy Data Simulator (DB logging every 10 min)
   # ===================
   simulator:
     build:
@@ -109,6 +109,41 @@ services:
       REVERB_HOST: reverb
       REVERB_PORT: 8080
     command: php artisan simulate:energy
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      reverb:
+        condition: service_started
+    networks:
+      - vel-scada-network
+    restart: unless-stopped
+
+  # ===================
+  # SOLAR BROADCASTER - Realtime solar display (every 1 min)
+  # ===================
+  solar-broadcaster:
+    build:
+      context: ../../backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vel-scada-solar-broadcaster
+    volumes:
+      - ../../backend:/var/www/html:cached
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: vel_scada
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REVERB_HOST: reverb
+      REVERB_PORT: 8080
+    command: php artisan broadcast:solar
     depends_on:
       mysql:
         condition: service_healthy

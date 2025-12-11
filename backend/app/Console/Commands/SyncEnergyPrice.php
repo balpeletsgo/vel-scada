@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\EnergyPrice;
+use App\Models\EnergyListing;
 use App\Models\SystemPrice;
 use App\Models\Transaction;
 use Illuminate\Console\Command;
@@ -29,15 +29,17 @@ class SyncEnergyPrice extends Command
         $this->info('Starting energy price sync...');
 
         try {
-            // Calculate supply (total stock available for sale)
-            $totalSupply = EnergyPrice::where('is_selling', true)
-                ->where('stock_kwh', '>', 0)
-                ->sum('stock_kwh');
+            // Calculate supply (total available listings in marketplace)
+            $totalSupply = EnergyListing::where('status', 'available')
+                ->sum('energy_kwh');
 
-            // Calculate demand (transactions in last 24 hours)
+            // Calculate demand (transactions in last 24 hours + baseline)
             $totalDemand = Transaction::where('status', 'completed')
                 ->where('created_at', '>=', Carbon::now()->subHours(24))
                 ->sum('energy_kwh');
+
+            // Add baseline demand (10 kWh) to avoid zero demand scenario
+            $totalDemand = max($totalDemand, 10);
 
             $this->info("Supply: {$totalSupply} kWh");
             $this->info("Demand (24h): {$totalDemand} kWh");

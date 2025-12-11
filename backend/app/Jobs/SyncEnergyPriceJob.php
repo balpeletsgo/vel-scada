@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Events\SystemPriceUpdated;
-use App\Models\EnergyPrice;
+use App\Models\EnergyListing;
 use App\Models\SystemPrice;
 use App\Models\Transaction;
 use Illuminate\Bus\Queueable;
@@ -32,15 +32,17 @@ class SyncEnergyPriceJob implements ShouldQueue
         $mlServiceUrl = env('ML_SERVICE_URL', 'http://ml-service:8001');
 
         try {
-            // Calculate supply (total stock available for sale)
-            $totalSupply = EnergyPrice::where('is_selling', true)
-                ->where('stock_kwh', '>', 0)
-                ->sum('stock_kwh');
+            // Calculate supply (total available listings in marketplace)
+            $totalSupply = EnergyListing::where('status', 'available')
+                ->sum('energy_kwh');
 
-            // Calculate demand (transactions in last 24 hours)
+            // Calculate demand (transactions in last 24 hours + baseline)
             $totalDemand = Transaction::where('status', 'completed')
                 ->where('created_at', '>=', Carbon::now()->subHours(24))
                 ->sum('energy_kwh');
+
+            // Add baseline demand (10 kWh) to avoid zero demand scenario
+            $totalDemand = max($totalDemand, 10);
 
             // Call ML service
             $response = Http::timeout(10)->post("{$mlServiceUrl}/price/calculate", [

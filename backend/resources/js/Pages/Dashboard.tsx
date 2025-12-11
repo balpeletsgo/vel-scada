@@ -78,8 +78,18 @@ interface PublicTransaction {
     created_at: string;
 }
 
+interface ChartHistoryItem {
+    time: string;
+    timestamp: string;
+    solar: number;
+    consumption: number;
+    mainPower: number;
+    battery: number;
+}
+
 interface DashboardProps {
     energyData: EnergyData;
+    chartHistory: ChartHistoryItem[];
     publicTransactions: PublicTransaction[];
     user: {
         id: number;
@@ -238,6 +248,7 @@ const ChartSkeleton = () => (
 
 export default function Dashboard({
     energyData,
+    chartHistory = [],
     publicTransactions = [],
     user,
 }: DashboardProps) {
@@ -252,6 +263,7 @@ export default function Dashboard({
         solarOutput: toNumber(energyData?.solar?.currentOutput, 0),
         solarMaxCapacity: toNumber(energyData?.solar?.maxCapacity, 0.37),
         solarStatus: energyData?.solar?.status || "inactive",
+        solarLastUpdate: null as string | null,
         batteryKwh: toNumber(energyData?.battery?.currentKwh, 50),
         batteryMaxCapacity: toNumber(energyData?.battery?.maxCapacity, 100),
         batteryPercentage: toNumber(energyData?.battery?.percentage, 50),
@@ -265,7 +277,18 @@ export default function Dashboard({
         text: string;
     } | null>(null);
 
-    // Realtime update effect
+    // Local chart history that persists across updates
+    const [localHistory, setLocalHistory] = useState<
+        Array<{
+            time: string;
+            mainPower: number;
+            battery: number;
+            solar: number;
+            consumption: number;
+        }>
+    >([]);
+
+    // Realtime update effect - also append to local history
     useEffect(() => {
         if (realtimeData) {
             setLiveStats((prev) => ({
@@ -275,6 +298,20 @@ export default function Dashboard({
                     realtimeData.solar_output,
                     prev.solarOutput
                 ),
+                solarLastUpdate: realtimeData.timestamp
+                    ? new Date(realtimeData.timestamp).toLocaleTimeString(
+                          "id-ID",
+                          {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                          }
+                      )
+                    : new Date().toLocaleTimeString("id-ID", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                      }),
                 batteryKwh: toNumber(
                     realtimeData.battery_level,
                     prev.batteryKwh
@@ -286,6 +323,20 @@ export default function Dashboard({
                 batteryStatus:
                     realtimeData.battery_status || prev.batteryStatus,
             }));
+
+            // Append to local history
+            const newPoint = {
+                time: new Date().toLocaleTimeString("id-ID", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                }),
+                mainPower: toNumber(realtimeData.main_power, 0),
+                battery: toNumber(realtimeData.battery_level, 0),
+                solar: toNumber(realtimeData.solar_output, 0),
+                consumption: toNumber(realtimeData.consumption, 0.046),
+            };
+            setLocalHistory((prev) => [...prev, newPoint].slice(-30));
         }
     }, [realtimeData]);
 
@@ -320,12 +371,32 @@ export default function Dashboard({
                     text: response.data.message,
                 });
                 setTransferAmount("");
+
+                const newBatteryKwh = response.data.data.battery.currentKwh;
+                const newMainPower = response.data.data.mainPower.current;
+
                 setLiveStats((prev) => ({
                     ...prev,
-                    batteryKwh: response.data.data.battery.currentKwh,
+                    batteryKwh: newBatteryKwh,
                     batteryPercentage: response.data.data.battery.percentage,
-                    mainPower: response.data.data.mainPower.current,
+                    mainPower: newMainPower,
+                    batteryStatus: "discharging",
                 }));
+
+                // Add transfer point to history
+                const transferPoint = {
+                    time: new Date().toLocaleTimeString("id-ID", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                    }),
+                    mainPower: newMainPower,
+                    battery: newBatteryKwh,
+                    solar: 0,
+                    consumption: 0,
+                };
+                setLocalHistory((prev) => [...prev, transferPoint].slice(-30));
+
                 router.reload({ only: ["energyData"] });
             }
         } catch (error: any) {
@@ -338,8 +409,9 @@ export default function Dashboard({
         }
     };
 
-    // Chart data - use realtime history if available, fallback to sample data
+    // Chart data - priority: 1. WebSocket realtime, 2. Database history, 3. Local history
     const chartData = useMemo(() => {
+        // Priority 1: Realtime WebSocket history
         if (history.length > 0) {
             return history.map((item) => ({
                 time: new Date(item.timestamp).toLocaleTimeString("id-ID", {
@@ -349,17 +421,34 @@ export default function Dashboard({
                 mainPower: toNumber(item.main_power, 0),
                 consumption: toNumber(item.consumption, 0.046),
                 battery: toNumber(item.battery_level, 0),
+                solar: toNumber(item.solar_output, 0),
             }));
         }
 
-        // Generate sample data for last 100 minutes (10 data points, 10 min interval)
+        // Priority 2: Database history (from props)
+        if (chartHistory.length > 0) {
+            return chartHistory.map((item) => ({
+                time: item.time,
+                mainPower: item.mainPower,
+                consumption: item.consumption,
+                battery: item.battery,
+                solar: item.solar,
+            }));
+        }
+
+        // Priority 3: Local history (from transfers/local actions)
+        if (localHistory.length > 0) {
+            return localHistory;
+        }
+
+        // Fallback: Generate sample data
         const now = new Date();
         const sampleData = [];
         let currentMainPower = liveStats.mainPower;
-        const consumptionRate = 0.046; // kWh per 10 minutes
+        const consumptionRate = 0.046;
 
         for (let i = 9; i >= 0; i--) {
-            const time = new Date(now.getTime() - i * 10 * 60000); // 10 minute intervals
+            const time = new Date(now.getTime() - i * 10 * 60000);
             sampleData.push({
                 time: time.toLocaleTimeString("id-ID", {
                     hour: "2-digit",
@@ -368,10 +457,18 @@ export default function Dashboard({
                 mainPower: Math.max(0, currentMainPower + i * consumptionRate),
                 consumption: consumptionRate,
                 battery: liveStats.batteryKwh,
+                solar: liveStats.solarOutput,
             });
         }
         return sampleData;
-    }, [history, liveStats.mainPower, liveStats.batteryKwh]);
+    }, [
+        history,
+        chartHistory,
+        localHistory,
+        liveStats.mainPower,
+        liveStats.batteryKwh,
+        liveStats.solarOutput,
+    ]);
 
     // SCADA data from realtime
     const scadaData = realtimeData?.scada || null;
@@ -658,20 +755,17 @@ export default function Dashboard({
                                             menit
                                         </p>
                                     </div>
-                                    <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded-lg">
-                                        <p className="text-green-600 font-semibold">
-                                            Battery
+                                    <div className="p-2 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg">
+                                        <p className="text-yellow-600 font-semibold">
+                                            Solar → Battery
                                         </p>
                                         <p className="text-xs text-muted-foreground">
-                                            +Solar (06:00-18:00)
+                                            +{formatKwh(0.0617)} kWh/10 menit
                                         </p>
                                     </div>
-                                    <div className="p-2 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
-                                        <p className="text-purple-600 font-semibold">
-                                            Consumption
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            ~6.6 kWh/hari
+                                    <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded-lg h-full flex flex-row items-center justify-center">
+                                        <p className="text-green-600 font-semibold">
+                                            Battery
                                         </p>
                                     </div>
                                 </div>

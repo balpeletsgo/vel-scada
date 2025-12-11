@@ -54,9 +54,11 @@ def calculate_multiplier(supply: float, demand: float) -> tuple[float, str]:
         # No supply but there's demand = high demand
         return MAX_MULTIPLIER, "high_demand"
 
+    # If no demand yet, use supply level to determine price
+    # Lower supply = higher price (anticipating future demand)
+    # Use baseline demand of 10 kWh for calculation
     if demand <= 0:
-        # Supply but no demand = high supply
-        return MIN_MULTIPLIER, "high_supply"
+        demand = 10.0  # baseline demand for ratio calculation
 
     # Calculate ratio (supply / demand)
     # ratio > 1 means more supply than demand
@@ -65,8 +67,8 @@ def calculate_multiplier(supply: float, demand: float) -> tuple[float, str]:
 
     # Use logarithmic scaling for smoother curve
     # log(ratio) = 0 when ratio = 1 (balanced)
-    # log(ratio) > 0 when supply > demand
-    # log(ratio) < 0 when demand > supply
+    # log(ratio) > 0 when supply > demand (should decrease price)
+    # log(ratio) < 0 when demand > supply (should increase price)
     log_ratio = np.log(ratio)
 
     # Map to multiplier range using sigmoid-like function
@@ -74,11 +76,15 @@ def calculate_multiplier(supply: float, demand: float) -> tuple[float, str]:
     # k controls steepness of transition
     k = 0.5
 
-    # Inverse relationship: more supply = lower price
-    # So we negate the log_ratio
+    # Sigmoid gives value 0-1
+    # When supply > demand: log_ratio > 0, we want LOW multiplier (closer to MIN)
+    # When demand > supply: log_ratio < 0, we want HIGH multiplier (closer to MAX)
+    # So we use POSITIVE log_ratio in exp to get inverse effect
     sigmoid = 1 / (1 + np.exp(k * log_ratio))
 
     # Scale to our multiplier range
+    # sigmoid high (close to 1) → multiplier high (close to MAX)
+    # sigmoid low (close to 0) → multiplier low (close to MIN)
     multiplier = MIN_MULTIPLIER + (MAX_MULTIPLIER - MIN_MULTIPLIER) * sigmoid
 
     # Determine market condition
