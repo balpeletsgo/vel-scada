@@ -116,7 +116,7 @@ class DashboardController extends Controller
             ->where('type', 'solar')
             ->where('user_id', $user->id)
             ->orderBy('logged_at', 'desc')
-            ->take(100)
+            ->take(10)
             ->get()
             ->map(function ($log) {
                 return [

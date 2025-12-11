@@ -745,7 +745,7 @@ export default function Dashboard({
                                         />
                                     </AreaChart>
                                 </ChartContainer>
-                                <div className="mt-4 grid grid-cols-3 gap-4 text-center text-sm">
+                                <div className="mt-4 grid grid-cols-2 gap-4 text-center text-sm">
                                     <div className="p-2 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
                                         <p className="text-blue-600 font-semibold">
                                             Main Power
@@ -753,14 +753,6 @@ export default function Dashboard({
                                         <p className="text-xs text-muted-foreground">
                                             Berkurang {formatKwh(0.046)} kWh/10
                                             menit
-                                        </p>
-                                    </div>
-                                    <div className="p-2 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg">
-                                        <p className="text-yellow-600 font-semibold">
-                                            Solar → Battery
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            +{formatKwh(0.0617)} kWh/10 menit
                                         </p>
                                     </div>
                                     <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded-lg h-full flex flex-row items-center justify-center">
